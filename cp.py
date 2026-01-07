@@ -476,12 +476,12 @@ def parse_instruction(line: str, flag_table: dict[str, int]) -> ParseInstruction
 
 BinCodeType: TypeAlias = list[tuple[bytes, str]]
 
-def compile(args: argparse.Namespace, code_raw: str) -> tuple[BinCodeType, bool]:
+def compile(args: argparse.Namespace, code_raw: str) -> tuple[BinCodeType, bool, list[int]]:
     """
     :param code: 汇编代码
     :type code: str
-    :return: 字节码, 是否有错误
-    :rtype: tuple[bytearray, bool]
+    :return: 字节码, 是否有错误, 字节码每行对应的源代码行号
+    :rtype: tuple[BinCodeType, bool]
     """
     cur_addr = 0
     line_instructions: list[tuple[int, Instruction]] = []
@@ -528,6 +528,7 @@ def compile(args: argparse.Namespace, code_raw: str) -> tuple[BinCodeType, bool]
         line_instructions.append((line_number, res))
     # 生成字节码
     bin_code = []
+    bin_src_lines = []
     for line_number, instruction in line_instructions:
         # 检查
         check_result = instruction.check_args()
@@ -539,12 +540,13 @@ def compile(args: argparse.Namespace, code_raw: str) -> tuple[BinCodeType, bool]
         try:
             bin_inst = instruction.parse_bin()
             bin_code.append((bin_inst, instruction.get_literal()))
+            bin_src_lines.extend([line_number] * len(bin_inst))
         except Exception as e:
             # print(f"第 {line_number} 行编译错误: {str(e)}")
             print_error(line_number, str(e), code_raw_lines[line_number - 1])
             has_error = True
     
-    return bin_code, has_error
+    return bin_code, has_error, bin_src_lines
 
 def out_bin(bytecode: BinCodeType) -> str:
     string = f"""\
@@ -572,7 +574,16 @@ def pack_bin(bytecode: BinCodeType) -> bytearray:
 def main():
     parser = argparse.ArgumentParser(description="DZC-8M Instruction ASM Compiler")
     parser.add_argument("file", help="输入的汇编代码文件")
-    parser.add_argument("-o", "--output", help="将字节码输出到文件。不指定则不输出到文件")
+    parser.add_argument("-o", "--output", 
+                    nargs='?',
+                    const=1,
+                    default=None,
+                    help="将字节码输出到文件。不指定则不输出到文件，使用此选项但不指定文件则输出到同名同目录下的.bin文件")
+    parser.add_argument("-D", "--debug-output", 
+                    nargs='?',
+                    const=1,
+                    default=None,
+                    help="将调试信息输出到文件，类型为JSON文件。不指定则不输出到文件，使用此选项但不指定文件则输出到同名同目录下的.json文件")
     parser.add_argument("-nob", "--no-output_binary", action="store_true", help="不输出二进制字节码")
     parser.add_argument("--no-warn", action="store_true", help="不显示警告")
     parser.add_argument("--version", action="version", version=f"Eggy Assembler Compiler\n{__version__}\nfor DZC-8M Plus Instruction Set")
@@ -581,18 +592,41 @@ def main():
     with open(args.file, "r", encoding="utf-8") as f:
         code = f.read()
     # 编译
-    bytecode, has_error = compile(args, code)
+    bytecode, has_error, bin_src_lines = compile(args, code)
     if has_error:
         print("编译失败，存在错误。")
         return 1
     # 输出字节码
     if not args.no_output_binary:
         print(out_bin(bytecode))
+    bincode = pack_bin(bytecode)
     # 如果指定了输出文件，则写入文件
     if args.output:
-        with open(args.output, "wb") as f:
-            f.write(pack_bin(bytecode))
-        print(f"二进制字节码已输出到 {args.output}")
+        # 如果没有指定文件名，构造文件名
+        if args.output == 1:
+            filename = os.path.splitext(args.file)[0] + ".bin"
+        else:
+            filename = args.output
+        with open(filename, "wb") as f:
+            f.write(bincode)
+        print(f"二进制字节码已输出到 {filename}")
+    # 如果指定了调试输出文件，则写入文件
+    if args.debug_output:
+        import base64
+        debug_string = f"""\
+{{
+    "bin": "{base64.b64encode(bincode).decode()}",
+    "src": "{repr(code)[1:-1]}",
+    "lines": {bin_src_lines}
+}}
+"""
+        if args.debug_output == 1:
+            filename = os.path.splitext(args.file)[0] + ".json"
+        else:
+            filename = args.debug_output
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(debug_string)
+        print(f"调试信息已输出到 {filename}")
     return 0
 
 if __name__ == "__main__":
