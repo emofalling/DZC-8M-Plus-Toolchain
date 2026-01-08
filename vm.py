@@ -33,12 +33,9 @@ class InstructionRunner:
     def get_program_from_addr(self, addr: int) -> int:
         return self.ctx.Program[addr % 0xFF]
     def __value_get_value(self, val: int) -> int:
-        print(f"Val: {val:08b}")
         if val & 0b1000: #R
-            print("Value is reg")
             return self.ctx.Registers[val & 0b0111]
-        else: # C
-            print("Value is const")
+        else: #C
             return val
     def __af_set(self, ops: tuple[int, int, int], is_sub: bool) -> int:
         # 设置AF符号位。注意out是a和b直接计算没有取模得到的。返回out对0xFF取模后的值
@@ -79,10 +76,7 @@ class InstructionRunner:
 
         outReg = program_d0 & 0b00000111
         targetValue = self.__value_get_value((program_d1 & 0b11110000) >> 4)
-        print("CondField:", f"{program_d1 & 0b00001111:08b}")
         Condition = self.__value_get_value(program_d1 & 0b00001111)
-
-        print("Cond:", Condition)
 
         if not Condition:
             self.ctx.Registers[outReg] = targetValue
@@ -335,8 +329,8 @@ class InstructionRunner:
         func, size = self.command_table[head]
         # dbg: 输出pc以及add之后的所有指令
         _start = self.ctx.Registers[PC]
-        for i in range(_start, _start + size):
-            print(f"{i:02X}: {self.ctx.Program[i]:08b}")
+      # for i in range(_start, _start + size):
+      #     print(f"{i:02X}: {self.ctx.Program[i]:08b}")
         # 更新PC
         self.ctx.Registers[PC] = (self.ctx.Registers[PC] + size) & 0xFF
         # 执行指令
