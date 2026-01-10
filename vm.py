@@ -1,28 +1,38 @@
-import sys, os
-import argparse
+from typing import Callable
 
 PC = 0
 AF = 1
 SP = 2
-GIO = 3
+IO = 3
 R0 = 4
 R1 = 5
 R2 = 6
 R3 = 7
+
+reg_name_map = {
+    0: 'PC',
+    1: 'AF',
+    2: 'SP',
+    3: 'IO',
+    4: 'R0',
+    5: 'R1',
+    6: 'R2',
+    7: 'R3',
+}
 
 class Ctx_t:
     Registers: list[int] = [
          0x00,  # PC
          0x00,  # AF
          0x00,  # SP
-         0x00,  # GIO
+         0x00,  # IO
          0x00,  # R0
          0x00,  # R1
          0x00,  # R2
          0x00,  # R3
     ]
         
-    Program: bytes = b'\x00' * 0xFF
+    Program: bytearray = bytearray(0xFF) # 程序存储区
     Program_max_addr: int = 0x0 # 超出max_addr识别为overflow
 
     Pause_signal: bool = False # 暂停信号。和DZC-8M的暂停信号一致。需自行复位。
@@ -30,6 +40,44 @@ class Ctx_t:
 class InstructionRunner:
     def __init__(self, ctx: Ctx_t):
         self.ctx = ctx
+        self.cur_addr = 0 # 当前指令地址
+        self.program_d0 = 0 # 当前addr + 0的程序字节
+        self.program_d1 = 0 # 当前addr + 1的程序字节
+        self.program_d2 = 0 # 当前addr + 2的程序字节
+        self.command_table: dict[int, tuple[Callable, int]] = {
+            0b00000: (self.__run_pause, 1),
+            0b00001: (self.__run_pause, 1),
+            0b00010: (self.__run_nop, 1),
+            0b00011: (self.__run_nop, 1),
+            0b00100: (self.__run_movz, 2),
+            0b00101: (self.__run_movlz, 3),
+            0b00110: (self.__run_movn, 2),
+            0b00111: (self.__run_movln, 3),
+            0b01000: (self.__run_add, 2),
+            0b01001: (self.__run_add, 2),
+            0b01010: (self.__run_sub, 2),
+            0b01011: (self.__run_sub, 2),
+            0b01100: (self.__run_addc, 2),
+            0b01101: (self.__run_addc, 2),
+            0b01110: (self.__run_subb, 2),
+            0b01111: (self.__run_subb, 2),
+            0b10000: (self.__run_inc, 1),
+            0b10001: (self.__run_dec, 1),
+            0b10010: (self.__run_cmp, 2),
+            0b10011: (self.__run_cmp, 2),
+            0b10100: (self.__run_not, 2),
+            0b10101: (self.__run_not, 2),
+            0b10110: (self.__run_and, 2),
+            0b10111: (self.__run_and, 2),
+            0b11000: (self.__run_or, 2),
+            0b11001: (self.__run_or, 2),
+            0b11010: (self.__run_xor, 2),
+            0b11011: (self.__run_xor, 2),
+            0b11100: (self.__run_shl, 2),
+            0b11101: (self.__run_shl, 2),
+            0b11110: (self.__run_shr, 2),
+            0b11111: (self.__run_shr, 2),
+        }
     def get_program_from_addr(self, addr: int) -> int:
         return self.ctx.Program[addr % 0xFF]
     def __value_get_value(self, val: int) -> int:
@@ -70,9 +118,8 @@ class InstructionRunner:
     
     def __run_movz(self):
         # MOVZ:[00100R][VV]
-        pc = self.ctx.Registers[PC]
-        program_d0 = self.get_program_from_addr(pc - 2)
-        program_d1 = self.get_program_from_addr(pc - 1)
+        program_d0 = self.program_d0
+        program_d1 = self.program_d1
 
         outReg = program_d0 & 0b00000111
         targetValue = self.__value_get_value((program_d1 & 0b11110000) >> 4)
@@ -84,9 +131,8 @@ class InstructionRunner:
         return 2
     def __run_movn(self):
         # MOVN:[00110R][VV]
-        pc = self.ctx.Registers[PC]
-        program_d0 = self.get_program_from_addr(pc - 2)
-        program_d1 = self.get_program_from_addr(pc - 1)
+        program_d0 = self.program_d0
+        program_d1 = self.program_d1
         
         outReg = program_d0 & 0b00000111
         targetValue = self.__value_get_value((program_d1 & 0b11110000) >> 4)
@@ -98,10 +144,9 @@ class InstructionRunner:
         return 2
     def __run_movlz(self):
         # MOVLZ:00101R][C(8)][Vxxxx]
-        pc = self.ctx.Registers[PC]
-        program_d0 = self.get_program_from_addr(pc - 3)
-        program_d1 = self.get_program_from_addr(pc - 2)
-        program_d2 = self.get_program_from_addr(pc - 1)
+        program_d0 = self.program_d0
+        program_d1 = self.program_d1
+        program_d2 = self.program_d2
         
 
         outReg = program_d0 & 0b00000111
@@ -114,10 +159,9 @@ class InstructionRunner:
         return 3
     def __run_movln(self):
         # MOVLN:00111R][C(8)][Vxxxx]
-        pc = self.ctx.Registers[PC]
-        program_d0 = self.get_program_from_addr(pc - 3)
-        program_d1 = self.get_program_from_addr(pc - 2)
-        program_d2 = self.get_program_from_addr(pc - 1)
+        program_d0 = self.program_d0
+        program_d1 = self.program_d1
+        program_d2 = self.program_d2
 
         outReg = program_d0 & 0b00000111
         targetValue = program_d1
@@ -129,9 +173,8 @@ class InstructionRunner:
         return 3
     def __run_add(self):
         # ADD: [0100xR][VV]
-        pc = self.ctx.Registers[PC]
-        program_d0 = self.get_program_from_addr(pc - 2)
-        program_d1 = self.get_program_from_addr(pc - 1)
+        program_d0 = self.program_d0
+        program_d1 = self.program_d1
 
         outReg = program_d0 & 0b00000111
         arg1 = self.__value_get_value((program_d1 & 0b11110000) >> 4)
@@ -143,9 +186,8 @@ class InstructionRunner:
         return 2
     def __run_sub(self):
         # SUB: [0101xR][VV]
-        pc = self.ctx.Registers[PC]
-        program_d0 = self.get_program_from_addr(pc - 2)
-        program_d1 = self.get_program_from_addr(pc - 1)
+        program_d0 = self.program_d0
+        program_d1 = self.program_d1
 
         outReg = program_d0 & 0b00000111
         arg1 = self.__value_get_value((program_d1 & 0b11110000) >> 4)
@@ -157,9 +199,8 @@ class InstructionRunner:
         return 2
     def __run_addc(self):
         # ADDC:[0110xR][VV]
-        pc = self.ctx.Registers[PC]
-        program_d0 = self.get_program_from_addr(pc - 2)
-        program_d1 = self.get_program_from_addr(pc - 1)
+        program_d0 = self.program_d0
+        program_d1 = self.program_d1
 
         outReg = program_d0 & 0b00000111
         arg1 = self.__value_get_value((program_d1 & 0b11110000) >> 4)
@@ -172,9 +213,8 @@ class InstructionRunner:
         return 2
     def __run_subb(self):
         # SUBC:[0111xR][VV]
-        pc = self.ctx.Registers[PC]
-        program_d0 = self.get_program_from_addr(pc - 2)
-        program_d1 = self.get_program_from_addr(pc - 1)
+        program_d0 = self.program_d0
+        program_d1 = self.program_d1
 
         outReg = program_d0 & 0b00000111
         arg1 = self.__value_get_value((program_d1 & 0b11110000) >> 4)
@@ -187,7 +227,7 @@ class InstructionRunner:
         return 2
     def __run_inc(self):
         # INC: [10000R]
-        program_d0 = self.get_program_from_addr(self.ctx.Registers[PC] - 1)
+        program_d0 = self.program_d0
 
         outReg = program_d0 & 0b00000111
         out = self.ctx.Registers[outReg] + 1
@@ -196,7 +236,7 @@ class InstructionRunner:
         return 1
     def __run_dec(self):
         # DEC: [10001R]
-        program_d0 = self.get_program_from_addr(self.ctx.Registers[PC] - 1)
+        program_d0 = self.program_d0
 
         outReg = program_d0 & 0b00000111
         out = self.ctx.Registers[outReg] - 1
@@ -206,7 +246,7 @@ class InstructionRunner:
     def __run_cmp(self):
         # CMP: [1001x-][VV]
         # program_d0 = self.get_program_from_addr(self.ctx.Registers[PC] - 2)
-        program_d1 = self.get_program_from_addr(self.ctx.Registers[PC] - 1)
+        program_d1 = self.program_d1
 
         arg1 = self.__value_get_value((program_d1 & 0b11110000) >> 4)
         arg2 = self.__value_get_value(program_d1 & 0b00001111)
@@ -216,9 +256,8 @@ class InstructionRunner:
 
     def __run_not(self):
         # NOT: [1010xR][Vxxxx]
-        pc = self.ctx.Registers[PC]
-        program_d0 = self.get_program_from_addr(pc - 2)
-        program_d1 = self.get_program_from_addr(pc - 1)
+        program_d0 = self.program_d0
+        program_d1 = self.program_d1
 
         outReg = program_d0 & 0b00000111
         arg1 = self.__value_get_value((program_d1 & 0b11110000) >> 4)
@@ -227,9 +266,8 @@ class InstructionRunner:
         return 2
     def __run_and(self):
         # AND: [1011xR][VV]
-        pc = self.ctx.Registers[PC]
-        program_d0 = self.get_program_from_addr(pc - 2)
-        program_d1 = self.get_program_from_addr(pc - 1)
+        program_d0 = self.program_d0
+        program_d1 = self.program_d1
 
         outReg = program_d0 & 0b00000111
         arg1 = self.__value_get_value((program_d1 & 0b11110000) >> 4)
@@ -239,9 +277,8 @@ class InstructionRunner:
         return 2
     def __run_or(self):
         # OR:  [1100xR][VV]
-        pc = self.ctx.Registers[PC]
-        program_d0 = self.get_program_from_addr(pc - 2)
-        program_d1 = self.get_program_from_addr(pc - 1)
+        program_d0 = self.program_d0
+        program_d1 = self.program_d1
 
         outReg = program_d0 & 0b00000111
         arg1 = self.__value_get_value((program_d1 & 0b11110000) >> 4)
@@ -251,9 +288,8 @@ class InstructionRunner:
         return 2
     def __run_xor(self):
         # XOR: [1101xR][VV]
-        pc = self.ctx.Registers[PC]
-        program_d0 = self.get_program_from_addr(pc - 2)
-        program_d1 = self.get_program_from_addr(pc - 1)
+        program_d0 = self.program_d0
+        program_d1 = self.program_d1
 
         outReg = program_d0 & 0b00000111
         arg1 = self.__value_get_value((program_d1 & 0b11110000) >> 4)
@@ -263,9 +299,8 @@ class InstructionRunner:
         return 2
     def __run_shl(self):
         # SHL: [1110xR][VV]
-        pc = self.ctx.Registers[PC]
-        program_d0 = self.get_program_from_addr(pc - 2)
-        program_d1 = self.get_program_from_addr(pc - 1)
+        program_d0 = self.program_d0
+        program_d1 = self.program_d1
 
         outReg = program_d0 & 0b00000111
         arg1 = self.__value_get_value((program_d1 & 0b11110000) >> 4)
@@ -275,9 +310,8 @@ class InstructionRunner:
         return 2
     def __run_shr(self):
         # SHR: [1111xR][VV]
-        pc = self.ctx.Registers[PC]
-        program_d0 = self.get_program_from_addr(pc - 2)
-        program_d1 = self.get_program_from_addr(pc - 1)
+        program_d0 = self.program_d0
+        program_d1 = self.program_d1
         
         outReg = program_d0 & 0b00000111
         arg1 = self.__value_get_value((program_d1 & 0b11110000) >> 4)
@@ -286,83 +320,146 @@ class InstructionRunner:
         self.ctx.Registers[outReg] = (arg1 >> arg2)
         return 2
     
-    command_table = {
-        0b00000: (__run_pause, 1),
-        0b00001: (__run_pause, 1),
-        0b00010: (__run_nop, 1),
-        0b00011: (__run_nop, 1),
-        0b00100: (__run_movz, 2),
-        0b00101: (__run_movlz, 3),
-        0b00110: (__run_movn, 2),
-        0b00111: (__run_movln, 3),
-        0b01000: (__run_add, 2),
-        0b01001: (__run_add, 2),
-        0b01010: (__run_sub, 2),
-        0b01011: (__run_sub, 2),
-        0b01100: (__run_addc, 2),
-        0b01101: (__run_addc, 2),
-        0b01110: (__run_subb, 2),
-        0b01111: (__run_subb, 2),
-        0b10000: (__run_inc, 1),
-        0b10001: (__run_dec, 1),
-        0b10010: (__run_cmp, 2),
-        0b10011: (__run_cmp, 2),
-        0b10100: (__run_not, 2),
-        0b10101: (__run_not, 2),
-        0b10110: (__run_and, 2),
-        0b10111: (__run_and, 2),
-        0b11000: (__run_or, 2),
-        0b11001: (__run_or, 2),
-        0b11010: (__run_xor, 2),
-        0b11011: (__run_xor, 2),
-        0b11100: (__run_shl, 2),
-        0b11101: (__run_shl, 2),
-        0b11110: (__run_shr, 2),
-        0b11111: (__run_shr, 2),
-    }
-
     def run_step(self):
-        # 获取指令头
-        op = self.ctx.Program[self.ctx.Registers[PC]]
-        head = op >> 3
-
+        # 获取前3位指令
+        pc = self.ctx.Registers[PC]
+        self.cur_addr = pc
+        self.program_d0 = self.get_program_from_addr(pc)
+        self.program_d1 = self.get_program_from_addr(pc + 1)
+        self.program_d2 = self.get_program_from_addr(pc + 2)
+        # 取头
+        head = self.program_d0 >> 3
+        # 获取函数
         func, size = self.command_table[head]
-        # dbg: 输出pc以及add之后的所有指令
-        _start = self.ctx.Registers[PC]
-      # for i in range(_start, _start + size):
-      #     print(f"{i:02X}: {self.ctx.Program[i]:08b}")
-        # 更新PC
-        self.ctx.Registers[PC] = (self.ctx.Registers[PC] + size) & 0xFF
-        # 执行指令
-        func(self)
+        # PC增偏移量
+        self.ctx.Registers[PC] = (pc + size) & 0xFF
+        # 执行函数
+        func()
 
-# Test
+ANSI_MOUSE_UP = '\x1b[1A'
+ANSI_MOUSE_LEFT = '\r'
+ANSI_CLEAR_LINE = '\x1b[2K'
+
+FILL_TRIANGLE = "\u25BA"
+CIRCLE = "\u25CB"
+
+        
 if __name__ == '__main__':
+    import time
+    import sys
+    import argparse
+    import signal
+
+    stdin = sys.stdin
+    stdout = sys.stdout
     # 解析参数：file
     parser = argparse.ArgumentParser()
-    parser.add_argument('file', help='file binary to run')
+    parser.add_argument('file', help='file binary or json to run')
+    parser.add_argument('-D', '--debug', help='若启用此项，file必须为json文件。不启用此项时，file必须为二进制文件', action='store_true')
+    parser.add_argument('-d', '--delay', type=float, help='每步执行延迟，单位为秒。默认不执行。负值表示单步调试', default=0.0)
+    parser.add_argument('-A', '--all-src', help='若启用此项，则显示所有源代码行，提供更清晰的代码提示。否则，只显示当前行，以便快速定位', action='store_true')
+    parser.add_argument('--ignore-pause', help='若启用此项，则忽略PAUSE信号。否则，当PAUSE信号被触发时，程序仍继续执行', action='store_true')
     args = parser.parse_args()
+
     # 初始化虚拟机
     ctx = Ctx_t()
     vm = InstructionRunner(ctx)
-    # 读取文件，写入到内存
-    with open(args.file, 'rb') as f:
-        ctx.Program = f.read()
-        #填充到256字节
-        ctx.Program += b'\x00' * (0xFF - len(ctx.Program))
+
+    debug: bool = args.debug
+    delay: float = args.delay
+    single_step = delay < 0.0
+    all_src = args.all_src
+    ignore_pause = args.ignore_pause
+
+    program: bytes
+    src: str | None
+    lines: list[int]
+    src_lines: list[str] = []
+
+    # 读取文件
+    if debug: # JSON debug
+        import json, base64
+        with open(args.file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        program = base64.b64decode(data["bin"])
+        src = data["src"]
+        lines = data["lines"]
+        src_lines = src.splitlines() # type: ignore
+    else: # 二进制
+        with open(args.file, 'rb') as f:
+            program = f.read()
+            src = None
+            lines = []
+    
+    # 如果program大于0xFF，则发送信息截断
+    if len(program) > 0xFF:
+        print("输入的程序大于256字节。将从0x00开始截断到0xFF。")
+        ctx.Program[:] = program[:0xFF]
+    else: #等于或小于256字节。补零。
+        ctx.Program[:len(program)] = program
+    is_exit = False
+    
+    def signal_handler(signum, frame):
+        global is_exit
+        is_exit = True
+    signal.signal(signal.SIGINT, signal_handler)
+
+    def get_line_str(addr: int) -> str:
+        try:
+            line = lines[addr]
+            return f"{line+1:>4}| {src_lines[line]}\n"
+        except IndexError:
+            return f"{f'0x{addr:X}':>6}: 0x{ctx.Program[addr]:02X}\n"
+
+
     while True:
         vm.run_step()
+        main = ""
+        pause_info = []
+
+        if debug: 
+            main += FILL_TRIANGLE + get_line_str(vm.cur_addr)
+            main += CIRCLE + get_line_str(ctx.Registers[PC])
+        for i in range(8):
+            n = ctx.Registers[i]
+            s08b = f"{n:08b}"
+            sn = f"{' '.join([*s08b])} = {n}"
+            sn_main = f"{reg_name_map[i]} = {sn}"
+            # PC = 1 1 1 1 1 1 1 1 = 255, 最大长度26
+            # 添加适量的空格
+            main += sn_main + ' ' * (26 - len(sn_main)) + '\n'
+
         if ctx.Pause_signal:
-            print(f"""
-            PC: {vm.ctx.Registers[PC]}
-            AF: {vm.ctx.Registers[AF]}
-            SP: {vm.ctx.Registers[SP]}
-            GIO: {vm.ctx.Registers[GIO]}
-            R0: {vm.ctx.Registers[R0]}
-            R1: {vm.ctx.Registers[R1]}
-            R2: {vm.ctx.Registers[R2]}
-            R3: {vm.ctx.Registers[R3]}
-            """)
-            input("Pausing, press enter to continue...")
+            pause_info.append("PAUSE")
             ctx.Pause_signal = False
-            print("Continue")
+        
+        if single_step:
+            pause_info.append("SINGLE_STEP")
+        
+        if pause_info:
+            main += f"Pause by {','.join(pause_info)}. Press Enter to continue, or input command.\n"
+        
+        stdout.write(main)
+        
+        if pause_info and not ignore_pause:
+            command = stdin.readline()
+        else: #延迟
+            if delay > 0.0: time.sleep(delay)
+        
+        if is_exit:
+            if pause_info:
+                # 向上移动并清行
+                stdout.write(ANSI_MOUSE_LEFT + (ANSI_MOUSE_UP + ANSI_CLEAR_LINE) * 1)
+            stdout.write("Exit.\n")
+            exit(0)
+        
+        if pause_info:
+            # 对于未忽略的pause, 向上移动并清行，两次; 否则1次
+            stdout.write(ANSI_MOUSE_LEFT + (ANSI_MOUSE_UP + ANSI_CLEAR_LINE) * (1 if ignore_pause else 2))
+        
+        
+        # 发送8个移行指令，清寄存器表
+        stdout.write(ANSI_MOUSE_LEFT + ANSI_MOUSE_UP * 8)
+
+        if debug:
+            stdout.write(ANSI_MOUSE_LEFT + (ANSI_MOUSE_UP + ANSI_CLEAR_LINE) * 2)

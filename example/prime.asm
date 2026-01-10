@@ -24,7 +24,7 @@ loop_check:
 loop_mod:
     // R2 -= R1, and set flags
     SUB R2, R2, R1
-    // if R2 > R1, continue loop
+    // if R2 > R1 for not subbed, continue loop
     // if AF.CF|AF.ZF == 0, R2 > R1
     AND AF, AF, 0b011 // keep CF|ZF
     MOVLZ PC, loop_mod, AF  // if R2 > R1 goto loop_mod

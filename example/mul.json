@@ -1,5 +1,5 @@
 {
     "bin": "JGAlcLfRKAvwRuz10eTBME0=",
     "src": "/*\n移位乘法器\nR0: 乘数1\nR1: 乘数2\nR2: 结果\nR3: 临时寄存器\n*/\n\n// _start:\nMOVZ R0, 6, 0\nMOVZ R1, 7, 0\n\nloop:\n    AND R3, R1, 1 // 取最低位\n    // 若 R3 == 1, 将 R0 加到 R2\n    MOVLZ PC, skip_add, R3\n// add:\n    ADD R2, R2, R0\nskip_add:\n    // 将 R1 右移一位\n    SHR R1, R1, 1\n    // 将R0 左移一位\n    SHL R0, R0, 1\n    // 若 R1 != 0, 跳转到 loop. R0 ！= 0也可以, 但这样效率低\n    MOVN PC, loop, R1",
-    "lines": [10, 10, 11, 11, 14, 14, 16, 16, 16, 18, 18, 21, 21, 23, 23, 25, 25]
+    "lines": [9, 9, 10, 10, 13, 13, 15, 15, 15, 17, 17, 20, 20, 22, 22, 24, 24]
 }

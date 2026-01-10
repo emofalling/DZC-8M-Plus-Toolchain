@@ -525,7 +525,7 @@ def compile(args: argparse.Namespace, code_raw: str) -> tuple[BinCodeType, bool,
         # 增加指令长度
         cur_addr += res.len
         # 添加指令
-        line_instructions.append((line_number, res))
+        line_instructions.append((line_number-1, res))
     # 生成字节码
     bin_code = []
     bin_src_lines = []
