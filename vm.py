@@ -336,8 +336,12 @@ class InstructionRunner:
         # 执行函数
         func()
 
-ANSI_MOUSE_UP = '\x1b[1A'
-ANSI_MOUSE_LEFT = '\r'
+ANSI_CURSOR_UP = '\x1b[1A'
+ANSI_CURSOR_UPS = lambda lines: f'\x1b[{lines}A'
+ANSI_CURSOR_DOWN = '\x1b[1B'
+ANSI_CURSOR_DOWNS = lambda lines: f'\x1b[{lines}B'
+ANSI_CURSOR_MOVE_UD = lambda lines: ANSI_CURSOR_DOWNS(lines) if lines > 0 else (ANSI_CURSOR_UPS(-lines) if lines < 0 else '')
+ANSI_CURSOR_LEFT = '\r'
 ANSI_CLEAR_LINE = '\x1b[2K'
 
 FILL_TRIANGLE = "\u25BA"
@@ -357,7 +361,7 @@ if __name__ == '__main__':
     parser.add_argument('file', help='file binary or json to run')
     parser.add_argument('-D', '--debug', help='若启用此项，file必须为json文件。不启用此项时，file必须为二进制文件', action='store_true')
     parser.add_argument('-d', '--delay', type=float, help='每步执行延迟，单位为秒。默认不执行。负值表示单步调试', default=0.0)
-    parser.add_argument('-A', '--all-src', help='若启用此项，则显示所有源代码行，提供更清晰的代码提示。否则，只显示当前行，以便快速定位', action='store_true')
+    parser.add_argument('-F', '--full-src', help='若启用此项，则显示所有源代码行，提供更清晰的代码提示。否则，只显示当前行，以便快速定位', action='store_true')
     parser.add_argument('--ignore-pause', help='若启用此项，则忽略PAUSE信号。否则，当PAUSE信号被触发时，程序仍继续执行', action='store_true')
     args = parser.parse_args()
 
@@ -368,13 +372,15 @@ if __name__ == '__main__':
     debug: bool = args.debug
     delay: float = args.delay
     single_step = delay < 0.0
-    all_src = args.all_src
+    full_src = args.full_src
     ignore_pause = args.ignore_pause
 
     program: bytes
     src: str | None
     lines: list[int]
     src_lines: list[str] = []
+
+    last_curaddr = 2**32 - 1 # 上一次的地址。仅在debug -F模式下使用。
 
     # 读取文件
     if debug: # JSON debug
@@ -404,13 +410,25 @@ if __name__ == '__main__':
         is_exit = True
     signal.signal(signal.SIGINT, signal_handler)
 
+    def clearlines(lines: int):
+        stdout.write(ANSI_CURSOR_LEFT + (ANSI_CURSOR_UP + ANSI_CLEAR_LINE) * 2)
+
+    def line_format(line: int) -> str:
+        return f"{line+1:>4}| {src_lines[line]}\n"
+
     def get_line_str(addr: int) -> str:
         try:
             line = lines[addr]
-            return f"{line+1:>4}| {src_lines[line]}\n"
+            return line_format(line)
         except IndexError:
             return f"{f'0x{addr:X}':>6}: 0x{ctx.Program[addr]:02X}\n"
 
+    if full_src:
+        # 输出所有行
+        for i in range(len(src_lines)):
+            stdout.write(line_format(i))
+        # 移到行首
+        stdout.write(ANSI_CURSOR_LEFT + ANSI_CURSOR_UPS(len(src_lines)))
 
     while True:
         vm.run_step()
@@ -418,8 +436,35 @@ if __name__ == '__main__':
         pause_info = []
 
         if debug: 
-            main += FILL_TRIANGLE + get_line_str(vm.cur_addr)
-            main += CIRCLE + get_line_str(ctx.Registers[PC])
+            if full_src:
+                # 将上一个cur_addr的行开头改为空格
+                try:
+                    last_line = lines[last_curaddr]
+                    stdout.write(ANSI_CURSOR_DOWNS(last_line) + ' ' + ANSI_CURSOR_LEFT)
+                except IndexError: last_line = -1
+                try:
+                    cur_line = lines[vm.cur_addr]
+                    # 计算差值
+                    if last_line == -1: diff = cur_line
+                    else: diff = cur_line - last_line
+                    # 三角形
+                    stdout.write(ANSI_CURSOR_MOVE_UD(diff) + FILL_TRIANGLE + ANSI_CURSOR_LEFT)
+                except IndexError: cur_line = -1
+                last_curaddr = vm.cur_addr
+                try:
+                    next_line = lines[vm.ctx.Registers[PC]]
+                    # 计算差值
+                    if cur_line == -1: diff = next_line
+                    else: diff = next_line - cur_line
+                    # 圆形
+                    stdout.write(ANSI_CURSOR_MOVE_UD(diff) + CIRCLE + ANSI_CURSOR_LEFT)
+                except IndexError: next_line = 0
+                # 移到行尾
+                stdout.write(ANSI_CURSOR_MOVE_UD(len(src_lines) - next_line))
+
+            else:
+                main += FILL_TRIANGLE + get_line_str(vm.cur_addr)
+                main += CIRCLE + get_line_str(ctx.Registers[PC])
         for i in range(8):
             n = ctx.Registers[i]
             s08b = f"{n:08b}"
@@ -449,17 +494,22 @@ if __name__ == '__main__':
         if is_exit:
             if pause_info:
                 # 向上移动并清行
-                stdout.write(ANSI_MOUSE_LEFT + (ANSI_MOUSE_UP + ANSI_CLEAR_LINE) * 1)
+                clearlines(1)
             stdout.write("Exit.\n")
             exit(0)
         
         if pause_info:
             # 对于未忽略的pause, 向上移动并清行，两次; 否则1次
-            stdout.write(ANSI_MOUSE_LEFT + (ANSI_MOUSE_UP + ANSI_CLEAR_LINE) * (1 if ignore_pause else 2))
+            clearlines(1 if ignore_pause else 2)
         
         
         # 发送8个移行指令，清寄存器表
-        stdout.write(ANSI_MOUSE_LEFT + ANSI_MOUSE_UP * 8)
+        stdout.write(ANSI_CURSOR_LEFT + ANSI_CURSOR_UPS(8))
 
         if debug:
-            stdout.write(ANSI_MOUSE_LEFT + (ANSI_MOUSE_UP + ANSI_CLEAR_LINE) * 2)
+            if full_src:
+                # 移动到行首
+                stdout.write(ANSI_CURSOR_UPS(len(src_lines)))
+                # stdout.write(f"u{len(src_lines)}." + ANSI_CURSOR_LEFT)
+            else: # 非full时清行
+                clearlines(2)
