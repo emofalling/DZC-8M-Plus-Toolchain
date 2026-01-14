@@ -343,6 +343,8 @@ ANSI_CURSOR_DOWNS = lambda lines: f'\x1b[{lines}B'
 ANSI_CURSOR_MOVE_UD = lambda lines: ANSI_CURSOR_DOWNS(lines) if lines > 0 else (ANSI_CURSOR_UPS(-lines) if lines < 0 else '')
 ANSI_CURSOR_LEFT = '\r'
 ANSI_CLEAR_LINE = '\x1b[2K'
+ANSI_CURSOR_SHOW = '\x1b[?25h'
+ANSI_CURSOR_HIDE = '\x1b[?25l'
 
 FILL_TRIANGLE = "\u25BA"
 CIRCLE = "\u25CB"
@@ -361,7 +363,7 @@ if __name__ == '__main__':
     parser.add_argument('file', help='file binary or json to run')
     parser.add_argument('-D', '--debug', help='若启用此项，file必须为json文件。不启用此项时，file必须为二进制文件', action='store_true')
     parser.add_argument('-d', '--delay', type=float, help='每步执行延迟，单位为秒。默认不执行。负值表示单步调试', default=0.0)
-    parser.add_argument('-F', '--full-src', help='若启用此项，则显示所有源代码行，提供更清晰的代码提示。否则，只显示当前行，以便快速定位', action='store_true')
+    parser.add_argument('-F', '--full-src', help='若启用此项，则显示所有源代码行，提供更清晰的代码提示。否则，只显示当前行，以便快速定位。请确保你的终端在横竖两个方向上都有足够的空间容纳内容，否则会出现显示异常。', action='store_true')
     parser.add_argument('--ignore-pause', help='若启用此项，则忽略PAUSE信号。否则，当PAUSE信号被触发时，程序仍继续执行', action='store_true')
     args = parser.parse_args()
 
@@ -429,6 +431,8 @@ if __name__ == '__main__':
             stdout.write(line_format(i))
         # 移到行首
         stdout.write(ANSI_CURSOR_LEFT + ANSI_CURSOR_UPS(len(src_lines)))
+    
+    stdout.write(ANSI_CURSOR_HIDE)
 
     while True:
         vm.run_step()
@@ -441,24 +445,26 @@ if __name__ == '__main__':
                 try:
                     last_line = lines[last_curaddr]
                     stdout.write(ANSI_CURSOR_DOWNS(last_line) + ' ' + ANSI_CURSOR_LEFT)
-                except IndexError: last_line = -1
+                except IndexError: last_line = 0
                 try:
                     cur_line = lines[vm.cur_addr]
                     # 计算差值
-                    if last_line == -1: diff = cur_line
-                    else: diff = cur_line - last_line
+                    #if last_line == -1: diff = cur_line
+                    #else: diff = cur_line - last_line
+                    diff = cur_line - last_line
                     # 三角形
                     stdout.write(ANSI_CURSOR_MOVE_UD(diff) + FILL_TRIANGLE + ANSI_CURSOR_LEFT)
-                except IndexError: cur_line = -1
+                except IndexError: cur_line = last_line
                 last_curaddr = vm.cur_addr
                 try:
                     next_line = lines[vm.ctx.Registers[PC]]
                     # 计算差值
-                    if cur_line == -1: diff = next_line
-                    else: diff = next_line - cur_line
+                    #if cur_line == -1: diff = next_line
+                    #else: diff = next_line - cur_line
+                    diff = next_line - cur_line
                     # 圆形
                     stdout.write(ANSI_CURSOR_MOVE_UD(diff) + CIRCLE + ANSI_CURSOR_LEFT)
-                except IndexError: next_line = 0
+                except IndexError: next_line = cur_line
                 # 移到行尾
                 stdout.write(ANSI_CURSOR_MOVE_UD(len(src_lines) - next_line))
 
@@ -482,12 +488,13 @@ if __name__ == '__main__':
             pause_info.append("SINGLE_STEP")
         
         if pause_info:
-            main += f"Pause by {','.join(pause_info)}. Press Enter to continue, or input command.\n"
+            main += f"Pause by {','.join(pause_info)}. Press Enter to continue, or input command.\n"+ANSI_CURSOR_SHOW
         
         stdout.write(main)
         
         if pause_info and not ignore_pause:
             command = stdin.readline()
+            stdout.write(ANSI_CURSOR_HIDE)
         else: #延迟
             if delay > 0.0: time.sleep(delay)
         
@@ -495,7 +502,7 @@ if __name__ == '__main__':
             if pause_info:
                 # 向上移动并清行
                 clearlines(1)
-            stdout.write("Exit.\n")
+            stdout.write("Exit.\n"+ANSI_CURSOR_SHOW)
             exit(0)
         
         if pause_info:
