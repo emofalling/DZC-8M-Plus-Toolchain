@@ -413,7 +413,7 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, signal_handler)
 
     def clearlines(lines: int):
-        stdout.write(ANSI_CURSOR_LEFT + (ANSI_CURSOR_UP + ANSI_CLEAR_LINE) * 2)
+        stdout.write(ANSI_CURSOR_LEFT + (ANSI_CURSOR_UP + ANSI_CLEAR_LINE) * lines)
 
     def line_format(line: int) -> str:
         return f"{line+1:>4}| {src_lines[line]}\n"

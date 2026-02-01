@@ -1,0 +1,5 @@
+{
+    "bin": "hIUARs0k0CXgICA=",
+    "src": "/*\nFibonacci Sequence Generator\nR0: Output\n*/\n//_start:\n/* MOVZ R0, 1, 0 */ INC R0\n/* MOVZ R1, 1, 0 */ INC R1\nflag:\n    PAUSE # User Input\n    ADD R2, R0, R1 # R2 = R0 + R1\n    MOVZ R0, R1, 0 # R0 = R1\n    MOVZ R1, R2, 0 # R1 = R2\n    MOVZ PC, flag, 0 # Loop",
+    "lines": [5, 6, 8, 9, 9, 10, 10, 11, 11, 12, 12]
+}
