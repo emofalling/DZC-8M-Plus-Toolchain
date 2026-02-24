@@ -1,0 +1,5 @@
+{
+    "bin": "LIMALYgAkM22kgCQzbaTAFbN9uXWnrbkAFbN9uW25NaetuUA",
+    "src": "// 先赋值\nMOVLZ R0, -125, 0\nMOVLZ R1, -120, 0\n\nCMP R0, R1\nAND R2, AF, 0b010  // 提取 AF:C 位\nPAUSE\n/*unsigned:\nR0 < R1，R2 ≠ 0;\nR0 ≥ R1，R2 = 0;\n*/\n\n\nCMP R0, R1\nAND R2, AF, 0b011  // 提取 AF:C 和 AF:Z\nPAUSE\n/*unsigned:\nR0 ≤ R1，R2 ≠ 0\nR0 > R1，R2 = 0\n*/\n\nSUB R2, R0, R1  // R2 = R0 - R1\n// 此时AF:2 = O (溢出标志)\nSHR R2, R2, 5   // 将结果右移到最低位，此时R2:2 = N (符号位)\nXOR R2, AF, R2  // [仅考虑第2位] 若O==N，R2:2=1；否则， R2[2]=0\nAND R2, R2, 0b100 // 提取R2:2\nPAUSE\n/*signed:\nR0 < R1，R2 ≠ 0;\nR0 ≥ R1，R2 = 0;\n*/\n\nSUB R2, R0, R1      // R2 = R0 - R1，AF 中包含 O 和 Z\nSHR R2, R2, 5       // 将结果右移 5 位，使符号位 N 移至第 2 位\nAND R2, R2, 0b100   // 仅保留符号位 N（位于第 2 位）\nXOR R2, AF, R2      // 比较 O 与 N：若 O == N 则 R2 第 2 位为 0，否则为 1；同时 AF 中的 Z 位被保留\nAND R2, R2, 0b101   // 提取第 0 位（Z）和第 2 位（O != N 的结果）\nPAUSE\n/*signed:\nR0 ≤ R1，R2 ≠ 0;\nR0 > R1，R2 = 0;\n*/",
+    "lines": [1, 1, 1, 2, 2, 2, 4, 4, 5, 5, 6, 13, 13, 14, 14, 15, 21, 21, 23, 23, 24, 24, 25, 25, 26, 32, 32, 33, 33, 34, 34, 35, 35, 36, 36, 37]
+}

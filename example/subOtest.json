@@ -1,0 +1,5 @@
+{
+    "bin": "LJwALWMARs0=",
+    "src": "// 测试有符号数减法\nMOVLZ R0, -100, 0\nMOVLZ R1, 99, 0\nADD R2, R0, R1",
+    "lines": [1, 1, 1, 2, 2, 2, 3, 3]
+}

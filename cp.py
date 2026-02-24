@@ -63,7 +63,7 @@ def remove_comments_preserve_lines(code):
 [0] PC  程序计数器 总是指向下一条指令。修改它可以实现跳转。
 [1] AF  ALU符号位。当调用ADD/ADDC/SUB/SUBC/NEG/CMP指令时, ALU符号会被设置。可写。
 [2] SP  栈指针, 为后来的子程序调用做准备。当前作为通用寄存器，但建议用于子程序中的父地址保存。
-[3] GIO 通信寄存器, 用于与外部设备通信。
+[3] IO 通信寄存器, 用于与外部设备通信。
 [4] R0  通用寄存器
 [5] R1  通用寄存器
 [6] R2  通用寄存器
@@ -96,7 +96,7 @@ class RegisterEnum(enum.Enum):
     PC = 0b000
     AF = 0b001
     SP = 0b010
-    GIO = 0b011
+    IO = 0b011
     R0 = 0b100
     R1 = 0b101
     R2 = 0b110
@@ -177,6 +177,8 @@ class ConstArg(Arg):
         pass
     def parse_bin(self):
         if isinstance(self._value, int):
+            if self._value < 0: # 转换为补码数
+                return self._value + 0x100
             return self._value
         elif isinstance(self._value, str):
             if self.flag_table is not None:
@@ -258,10 +260,14 @@ class Instruction:
                 const_max = 7 # 0b111
                 arg = self.args[i]
                 arg_arg = self.types_args[i]
+                const_min = 0
                 if arg_arg is not None:
                     const_max = arg_arg
-                if arg.value > const_max:
-                    return f"参数{i}常量值超出范围，最大允许{const_max}，实际{arg.value}"
+                    if arg_arg >= 0xFF:
+                        const_min = -0x80
+                if const_min > arg.value or arg.value > const_max:
+                    return f"参数{i}常量值超出范围，目标值域为[{const_min}, {const_max}]，实际{arg.value}"
+                # 检查下限
     
 
     def parse_bin(self) -> bytes:
@@ -549,22 +555,26 @@ def compile(args: argparse.Namespace, code_raw: str) -> tuple[BinCodeType, bool,
     return bin_code, has_error, bin_src_lines
 
 def out_bin(bytecode: BinCodeType) -> str:
-    string = f"""\
- Addr       Byte             ASM
------------------------------------------
+    string = """\
+  Addr       Byte             ASM
+┌─────┬─────────────────┬──────────────────────
+"""
+    string_end = """\
+└─────┴─────────────────┴──────────────────────
 """
     addr = 0
     # 遍历列表
     for bin_inst, asm in bytecode:
         # 遍历字节
         for i, byte in enumerate(bin_inst):
-            string += f"{addr:>4} | "
+            string += f"│{addr:>4} │ "
             byte_bin = ' '.join(f"{byte:08b}") + ' '
-            string += byte_bin + '|'
+            string += byte_bin + '│'
             if i == 0:
                 string += f" {asm}"
             addr += 1
             string += '\n'
+    string += string_end
     return string
 
 def pack_bin(bytecode: BinCodeType) -> bytearray:

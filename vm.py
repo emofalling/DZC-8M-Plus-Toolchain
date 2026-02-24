@@ -355,6 +355,7 @@ if __name__ == '__main__':
     import sys
     import argparse
     import signal
+    import struct
 
     stdin = sys.stdin
     stdout = sys.stdout
@@ -401,7 +402,7 @@ if __name__ == '__main__':
     
     # 如果program大于0xFF，则发送信息截断
     if len(program) > 0xFF:
-        print("输入的程序大于256字节。将从0x00开始截断到0xFF。")
+        print("输入的程序大于256字节。将从截断到0xFF。")
         ctx.Program[:] = program[:0xFF]
     else: #等于或小于256字节。补零。
         ctx.Program[:len(program)] = program
@@ -416,7 +417,7 @@ if __name__ == '__main__':
         stdout.write(ANSI_CURSOR_LEFT + (ANSI_CURSOR_UP + ANSI_CLEAR_LINE) * lines)
 
     def line_format(line: int) -> str:
-        return f"{line+1:>4}| {src_lines[line]}\n"
+        return f"{line+1:>4}│ {src_lines[line]}\n"
 
     def get_line_str(addr: int) -> str:
         try:
@@ -471,14 +472,18 @@ if __name__ == '__main__':
             else:
                 main += FILL_TRIANGLE + get_line_str(vm.cur_addr)
                 main += CIRCLE + get_line_str(ctx.Registers[PC])
+        # 输出寄存器信息
         for i in range(8):
             n = ctx.Registers[i]
             s08b = f"{n:08b}"
             sn = f"{' '.join([*s08b])} = {n}"
             sn_main = f"{reg_name_map[i]} = {sn}"
-            # PC = 1 1 1 1 1 1 1 1 = 255, 最大长度26
+            # 如果n>127, 则显示补码数形式
+            if n > 0x7F:
+                sn_main += f"({n - 0x100})"
+            # PC = 1 1 1 1 1 1 1 1 = 255(-128), 最大长度32
             # 添加适量的空格
-            main += sn_main + ' ' * (26 - len(sn_main)) + '\n'
+            main += sn_main + ' ' * (32 - len(sn_main)) + '\n'
 
         if ctx.Pause_signal:
             pause_info.append("PAUSE")
