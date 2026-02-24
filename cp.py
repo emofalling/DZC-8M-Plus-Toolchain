@@ -421,7 +421,7 @@ def print_error(line_number: int, message: str, line: str, title: str = "错误"
     """打印编译错误信息。"""
     print(f"""\
 {title}: {message}
-    {line_number} | {line}
+    {line_number} │ {line}
 """)
     
 ParseInstruction_BaseType: TypeAlias = Instruction | Flag | str | None
